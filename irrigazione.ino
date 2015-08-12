@@ -15,7 +15,7 @@
  * 
  * Loop funzionamento
  * ==================
- * if (stopIsPressed())
+ * if (isStopPushed())
  * - stopEverything();
  * 
  * if (hasToStartWateringLoop())
@@ -47,7 +47,7 @@
  * 
  */
 
-const long WATERING_TIME = 3600000; // 60 * 60 * 1000 = 1 ora
+const long WATERING_TIME = 3600000; // 60 * 60 * 1000 = 1 hour
 const int PIN_SPRINKLERS[] = { 2, 3, 4, 5, 6, 7 }; // PD2 - PD7
 const int PIN_RAIN_VA = 14; // A0 - PC7
 const int PIN_RAIN_SW = 8; // PB0 
@@ -55,8 +55,12 @@ const int PIN_RAIN_SW = 8; // PB0
 const int PIN_BUTTON_START = 9;
 const int PIN_BUTTON_STOP = 10;
 const int PIN_BUTTON_MANUAL = 11;
+const int PIN_SWITCH_ENABLE = 12;
 
 const int DEBOUNCE_DELAY = 50;
+
+const int WATERING_START_HOUR = 19;
+const int WATERING_START_MINUTE = 00;
 
 struct Inputs {
   int startState;
@@ -70,7 +74,20 @@ struct Inputs {
   int manualState;
   int manualLastState;
   long manualDebounceTime;
+
+  int enableState;
+  int enableLastState;  
+  long enableDebounceTime;
+
+  int rainValue;
+  int rainState; // LOW = RAIN - HIGH = NO RAIN
+  int rainLastState;
+  long rainDebounceTime;
+  
 } inputs;
+
+time_t nextWateringTime = 0;
+
 
 void setup() {
   // put your setup code here, to run once:
@@ -92,15 +109,51 @@ void setup() {
 
   memset(&inputs, 0, sizeof(Inputs));
   inputs.startState = LOW;
-  inputs.stopState = LOW;
-  inputs.manualState = LOW;
   inputs.startLastState = LOW;
+  
+  inputs.stopState = LOW;
   inputs.stopLastState = LOW;
+  
+  inputs.manualState = LOW;
   inputs.manualLastState = LOW;
+  
+  inputs.enableState = LOW;
+  inputs.enableLastState = LOW;
+  
+  inputs.rainState = HIGH;
+  inputs.rainLastState = HIGH;
+
+  setNextAutomaticWatering();
 }
 
 void loop() {
   readInputs();
+
+  if (isStopPushed()) {
+    stopEverything();
+  }
+  
+}
+
+bool isStopPushed() {
+  return inputs.stopState == HIGH;
+}
+
+void stopEverything() {
+  // TODO
+  setNextAutomaticWatering();
+}
+
+void setNextAutomaticWatering() {
+  tmElements_t tm;
+  if (RTC.read(tm) == 0) {
+    tm.Hour = WATERING_START_HOUR;
+    tm.Minute = WATERING_START_MINUTE;
+    tm.Second = 0;
+    // we should address DST but we dont right now so we just add a day ^_^
+    time_t t = makeTime(tm);
+    nextWateringTime = t + SECS_PER_DAY;
+  }
 }
 
 /* 
@@ -113,6 +166,7 @@ void readInputs() {
   readStartButton();
   readStopButton();
   readManualButton();
+  readEnableSwitch();
 
   readRainSensor();
 }
@@ -154,7 +208,7 @@ void readStopButton() {
 }
 
 void readManualButton() {
-  int reading = digitalRead(PIN_BUTTON_STOP);
+  int reading = digitalRead(PIN_BUTTON_MANUAL);
   // input has changed
   if (reading != inputs.manualLastState) {
     // reset the debouncing timer
@@ -171,7 +225,41 @@ void readManualButton() {
   inputs.manualLastState = reading;
 }
 
+void readEnableSwitch() {
+  int reading = digitalRead(PIN_SWITCH_ENABLE);
+  // input has changed
+  if (reading != inputs.enableLastState) {
+    // reset the debouncing timer
+    inputs.enableDebounceTime = millis();
+  } 
+  // after DEBOUNCE_DELAY input should be settled down  
+  if ((millis() - inputs.enableDebounceTime) > DEBOUNCE_DELAY) {
+    // if the button state has changed:
+    if (reading != inputs.enableState) {
+      inputs.enableState = reading;
+    }
+  }
+  // save the reading
+  inputs.enableLastState = reading;
+}
+
 void readRainSensor() {
-  // TODO
+  inputs.rainValue = analogRead(PIN_RAIN_VA);
+  
+  int reading = digitalRead(PIN_RAIN_SW);
+  // input has changed
+  if (reading != inputs.rainLastState) {
+    // reset the debouncing timer
+    inputs.rainDebounceTime = millis();
+  } 
+  // after DEBOUNCE_DELAY input should be settled down  
+  if ((millis() - inputs.rainDebounceTime) > DEBOUNCE_DELAY) {
+    // if the button state has changed:
+    if (reading != inputs.rainState) {
+      inputs.rainState = reading;
+    }
+  }
+  // save the reading
+  inputs.rainLastState = reading;
 }
 
