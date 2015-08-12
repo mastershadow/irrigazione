@@ -87,6 +87,10 @@ struct Inputs {
 } inputs;
 
 time_t nextWateringTime = 0;
+bool wateringLoopRunning = false;
+bool manualWateringRunning = false;
+int currentSprinkler = -1;
+long currentSprinklerStartTime = 0;
 
 
 void setup() {
@@ -131,16 +135,115 @@ void loop() {
 
   if (isStopPushed()) {
     stopEverything();
+  } 
+  
+  if (isManualWateringRequested()) {
+    startManualWatering();  
   }
   
+  if (hasToStartWateringLoop()) {
+    startWateringLoop();
+  }
+
+  wateringLoop();
+}
+
+bool hasToStartWateringLoop() {
+  bool timerDone = now() - nextWateringTime > 0;
+  // loop start requested by button
+  if (isWateringLoopRequested()) {
+    return true;
+  }
+  // loop start requested by scheduling
+  if (timerDone && 
+    wateringLoopRunning == false &&
+    manualWateringRunning == false &&
+    isRaining() == false &&
+    isAutomaticWateringEnabled() == true) {
+      return true;
+  }
+  return false;
+}
+
+void startWateringLoop() {
+  stopEverything();
+  wateringLoopRunning = true;
+  startSprinkler(0);
+}
+
+void wateringLoop() {
+  if (wateringLoopRunning == true) {
+    if (now() - currentSprinklerStartTime > WATERING_TIME) {
+      stopSprinkler(currentSprinkler);
+      int nextSprinkler = getNextSprinkler();
+      if (nextSprinkler != 0) {
+        // loop is not completed. move to next
+        startSprinkler(nextSprinkler);
+      } else {
+        // loop completed. stop
+        stopEverything();
+      }
+    }
+  }  
+}
+
+void startSprinkler(int sprinkler) {
+  currentSprinkler = sprinkler;
+  currentSprinklerStartTime = now();
+  digitalWrite(PIN_SPRINKLERS[sprinkler], true);
+}
+
+void stopSprinkler(int sprinkler) {
+  digitalWrite(PIN_SPRINKLERS[sprinkler], LOW);
+}
+
+void stopSprinklers() {
+  for (int i = 0; i < (int)(sizeof(PIN_SPRINKLERS)); i++) {
+    stopSprinkler(i);
+  }
+}
+
+bool isManualWateringRequested() {
+  return inputs.manualState == HIGH;
+}
+
+bool isWateringLoopRequested() {
+  return inputs.startState == HIGH;
+}
+
+// if we are already watering in a loop, it passes to manual mode switching to the next sprinkler
+void startManualWatering() {
+  // this is needed to increase the sprinkler on demand and to loop
+  // on the first iteration currentSprinkler is -1 and nextSprinkler gets 0 as value
+  // on the following iteration it gets looped 0-5
+  int nextSprinkler = getNextSprinkler();
+  stopEverything();
+  manualWateringRunning = true;
+  startSprinkler(nextSprinkler);
+}
+
+int getNextSprinkler() {
+  return ((currentSprinkler + 1) % (int)(sizeof(PIN_SPRINKLERS)));
 }
 
 bool isStopPushed() {
   return inputs.stopState == HIGH;
 }
 
+bool isRaining() {
+  return inputs.rainState == LOW;
+}
+
+bool isAutomaticWateringEnabled() {
+  return inputs.enableState == HIGH;
+}
+
 void stopEverything() {
-  // TODO
+  stopSprinklers();
+  wateringLoopRunning = false;
+  manualWateringRunning = false;
+  currentSprinkler = -1;
+  currentSprinklerStartTime = 0;
   setNextAutomaticWatering();
 }
 
