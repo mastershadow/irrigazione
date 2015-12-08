@@ -49,7 +49,7 @@
 
 const long WATERING_TIME = 3600000; // 60 * 60 * 1000 = 1 hour
 const int PIN_SPRINKLERS[] = { 2, 3, 4, 5, 6, 7 }; // PD2 - PD7
-const int PIN_RAIN_VA = 14; // A0 - PC7
+const int PIN_RAIN_VA = A0; // A0 - PC7
 const int PIN_RAIN_SW = 8; // PB0 
 
 const int PIN_BUTTON_START = 9;
@@ -94,6 +94,8 @@ long currentSprinklerStartTime = 0;
 
 
 void setup() {
+  setSyncProvider(RTC.get);
+  Serial.begin(9600);
   // put your setup code here, to run once:
   pinMode(PIN_SPRINKLERS[0], OUTPUT);
   pinMode(PIN_SPRINKLERS[1], OUTPUT);
@@ -108,26 +110,28 @@ void setup() {
   pinMode(PIN_BUTTON_START, INPUT);
   pinMode(PIN_BUTTON_STOP, INPUT);
   pinMode(PIN_BUTTON_MANUAL, INPUT);
+  pinMode(PIN_SWITCH_ENABLE, INPUT);
   
-  setSyncProvider(RTC.get);
-
   memset(&inputs, 0, sizeof(Inputs));
-  inputs.startState = LOW;
-  inputs.startLastState = LOW;
+  inputs.startState = HIGH;
+  inputs.startLastState = HIGH;
   
-  inputs.stopState = LOW;
-  inputs.stopLastState = LOW;
+  inputs.stopState = HIGH;
+  inputs.stopLastState = HIGH;
   
-  inputs.manualState = LOW;
-  inputs.manualLastState = LOW;
+  inputs.manualState = HIGH;
+  inputs.manualLastState = HIGH;
   
-  inputs.enableState = LOW;
-  inputs.enableLastState = LOW;
+  inputs.enableState = HIGH;
+  inputs.enableLastState = HIGH;
   
-  inputs.rainState = HIGH;
-  inputs.rainLastState = HIGH;
+  inputs.rainState = LOW;
+  inputs.rainLastState = LOW;
 
+  delay(500);
+  digitalClockDisplay();
   setNextAutomaticWatering();
+  Serial.println("Setup complete.");
 }
 
 void loop() {
@@ -286,6 +290,8 @@ void readStartButton() {
     // if the button state has changed:
     if (reading != inputs.startState) {
       inputs.startState = reading;
+      Serial.print("Start changed to: ");
+      Serial.println(reading, DEC);
     }
   }
   // save the reading
@@ -304,6 +310,8 @@ void readStopButton() {
     // if the button state has changed:
     if (reading != inputs.stopState) {
       inputs.stopState = reading;
+      Serial.print("Stop changed to: ");
+      Serial.println(reading, DEC);
     }
   }
   // save the reading
@@ -322,6 +330,8 @@ void readManualButton() {
     // if the button state has changed:
     if (reading != inputs.manualState) {
       inputs.manualState = reading;
+      Serial.print("Manual changed to: ");
+      Serial.println(reading, DEC);
     }
   }
   // save the reading
@@ -340,6 +350,8 @@ void readEnableSwitch() {
     // if the button state has changed:
     if (reading != inputs.enableState) {
       inputs.enableState = reading;
+      Serial.print("Enable changed to: ");
+      Serial.println(reading, DEC);
     }
   }
   // save the reading
@@ -360,9 +372,34 @@ void readRainSensor() {
     // if the button state has changed:
     if (reading != inputs.rainState) {
       inputs.rainState = reading;
+      Serial.print("Rain changed to: ");
+      Serial.println(reading, DEC);
     }
   }
   // save the reading
   inputs.rainLastState = reading;
 }
+
+void digitalClockDisplay(){
+  // digital clock display of the time
+  Serial.print(hour());
+  printDigits(minute());
+  printDigits(second());
+  Serial.print(" ");
+  Serial.print(day());
+  Serial.print(" ");
+  Serial.print(month());
+  Serial.print(" ");
+  Serial.print(year()); 
+  Serial.println(); 
+}
+
+void printDigits(int digits){
+  // utility function for digital clock display: prints preceding colon and leading 0
+  Serial.print(":");
+  if(digits < 10)
+    Serial.print('0');
+  Serial.print(digits);
+}
+
 
