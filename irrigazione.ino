@@ -2,6 +2,8 @@
 #include <Time.h>         // http://www.arduino.cc/playground/Code/Time
 #include <Wire.h>         // http://arduino.cc/en/Reference/Wire
 
+#define DEBUG 1
+
 /*
  * Caratteristiche
  * ===============
@@ -47,7 +49,12 @@
  * 
  */
 
-const long WATERING_TIME = 3600000; // 60 * 60 * 1000 = 1 hour
+#ifdef DEBUG
+#define LOG 1
+#endif
+
+// const long WATERING_TIME = 3600; // 60 * 60 = 1 hour
+const long WATERING_TIME = 1;
 const int PIN_SPRINKLERS[] = { 2, 3, 4, 5, 6, 7 }; // PD2 - PD7
 const int PIN_RAIN_VA = A0; // A0 - PC7
 const int PIN_RAIN_SW = 8; // PB0 
@@ -148,11 +155,12 @@ void loop() {
   if (hasToStartWateringLoop()) {
     startWateringLoop();
   }
-
+  
   wateringLoop();
 }
 
 bool hasToStartWateringLoop() {
+  // FIXME this is always true (d'oh)
   bool timerDone = now() - nextWateringTime > 0;
   // loop start requested by button
   if (isWateringLoopRequested()) {
@@ -177,7 +185,7 @@ void startWateringLoop() {
 
 void wateringLoop() {
   if (wateringLoopRunning == true) {
-    if (now() - currentSprinklerStartTime > WATERING_TIME) {
+    if (now() - currentSprinklerStartTime >= WATERING_TIME) {
       stopSprinkler(currentSprinkler);
       int nextSprinkler = getNextSprinkler();
       if (nextSprinkler != 0) {
@@ -194,7 +202,7 @@ void wateringLoop() {
 void startSprinkler(int sprinkler) {
   currentSprinkler = sprinkler;
   currentSprinklerStartTime = now();
-  digitalWrite(PIN_SPRINKLERS[sprinkler], true);
+  digitalWrite(PIN_SPRINKLERS[sprinkler], HIGH);
 }
 
 void stopSprinkler(int sprinkler) {
@@ -208,11 +216,11 @@ void stopSprinklers() {
 }
 
 bool isManualWateringRequested() {
-  return inputs.manualState == HIGH;
+  return inputs.manualState == LOW;
 }
 
 bool isWateringLoopRequested() {
-  return inputs.startState == HIGH;
+  return inputs.startState == LOW;
 }
 
 // if we are already watering in a loop, it passes to manual mode switching to the next sprinkler
@@ -231,7 +239,7 @@ int getNextSprinkler() {
 }
 
 bool isStopPushed() {
-  return inputs.stopState == HIGH;
+  return inputs.stopState == LOW;
 }
 
 bool isRaining() {
@@ -239,7 +247,7 @@ bool isRaining() {
 }
 
 bool isAutomaticWateringEnabled() {
-  return inputs.enableState == HIGH;
+  return inputs.enableState == LOW;
 }
 
 void stopEverything() {
@@ -259,7 +267,12 @@ void setNextAutomaticWatering() {
     tm.Second = 0;
     // we should address DST but we dont right now so we just add a day ^_^
     time_t t = makeTime(tm);
-    nextWateringTime = t + SECS_PER_DAY;
+    // if t has already passed set to the next day otherwise keep the value
+    if (t - now() > SECS_PER_DAY) {
+      nextWateringTime = t;
+    } else {
+      nextWateringTime = t + SECS_PER_DAY;
+    }
   }
 }
 
@@ -287,11 +300,13 @@ void readStartButton() {
   } 
   // after DEBOUNCE_DELAY input should be settled down  
   if ((millis() - inputs.startDebounceTime) > DEBOUNCE_DELAY) {
-    // if the button state has changed:
+    // if the button state is low start has been requested:
     if (reading != inputs.startState) {
       inputs.startState = reading;
+#if LOG
       Serial.print("Start changed to: ");
-      Serial.println(reading, DEC);
+      Serial.println(inputs.startState, DEC);
+#endif
     }
   }
   // save the reading
@@ -310,8 +325,10 @@ void readStopButton() {
     // if the button state has changed:
     if (reading != inputs.stopState) {
       inputs.stopState = reading;
+#if LOG
       Serial.print("Stop changed to: ");
       Serial.println(reading, DEC);
+#endif
     }
   }
   // save the reading
@@ -330,8 +347,10 @@ void readManualButton() {
     // if the button state has changed:
     if (reading != inputs.manualState) {
       inputs.manualState = reading;
+#if LOG
       Serial.print("Manual changed to: ");
       Serial.println(reading, DEC);
+#endif      
     }
   }
   // save the reading
@@ -349,9 +368,11 @@ void readEnableSwitch() {
   if ((millis() - inputs.enableDebounceTime) > DEBOUNCE_DELAY) {
     // if the button state has changed:
     if (reading != inputs.enableState) {
-      inputs.enableState = reading;
+      inputs.enableState = reading;    
+#if LOG
       Serial.print("Enable changed to: ");
       Serial.println(reading, DEC);
+#endif      
     }
   }
   // save the reading
@@ -372,8 +393,10 @@ void readRainSensor() {
     // if the button state has changed:
     if (reading != inputs.rainState) {
       inputs.rainState = reading;
+#if LOG
       Serial.print("Rain changed to: ");
       Serial.println(reading, DEC);
+#endif
     }
   }
   // save the reading
