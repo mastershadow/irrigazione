@@ -5,59 +5,59 @@
 #define DEBUG 1
 
 /*
- * Caratteristiche
- * ===============
- * 1) Avvio automatico ciclo irrigazione a una data ora, da clock e con rilevamento pioggia (se piove non parte)
- * 2) Avvio manuale ciclo irrigazione
- * 3) Stop manuale irrigazione
- * 
- * Desiderata
- * ==========
- * - Bottone manuale: avvia su elettrovalvola N fino a stop manuale irrigazione (nuova pressione passa a N+1, se N+1 > 5 va alla 0)
- * 
- * Loop funzionamento
- * ==================
- * if (isStopPushed())
- * - stopEverything();
- * 
- * if (hasToStartWateringLoop())
- * - startWateringLoop();
- * 
- * if (manualWateringRequested())
- * - enableManualWatering();
- * 
- * if (isWateringLoopRunning())
- * - if (hasCurrentSprinklerDone())
- * --- stopCurrentSprinkler();
- * --- if (isWateringLoopDone())
- * ------ stopEverything();
- * --- else
- * ------ startNextSprinkler();
- * 
- * Condizioni di avvio ciclo irrigazione
- * =====================================
- * Tutte le condizioni devono essere verificate:
- * - Irrigazione non avviata (ciclo o forzatura manuale)
- * - Sensore pioggia non scattato
- * - Tempo corrente > tempo avvio programmato (distinguere i giorni)
- * - Irrigazione automatica abilitata
- * - Bottone manuale non premuto (*)
- * 
- * Funzionamento ciclo irrigazione
- * ===============================
- * Ogni irrigatore deve rimanere aperto per WATERING_TIME
- * 
- */
+   Caratteristiche
+   ===============
+   1) Avvio automatico ciclo irrigazione a una data ora, da clock e con rilevamento pioggia (se piove non parte)
+   2) Avvio manuale ciclo irrigazione
+   3) Stop manuale irrigazione
+
+   Desiderata
+   ==========
+   - Bottone manuale: avvia su elettrovalvola N fino a stop manuale irrigazione (nuova pressione passa a N+1, se N+1 > 5 va alla 0)
+
+   Loop funzionamento
+   ==================
+   if (isStopPushed())
+   - stopEverything();
+
+   if (hasToStartWateringLoop())
+   - startWateringLoop();
+
+   if (manualWateringRequested())
+   - enableManualWatering();
+
+   if (isWateringLoopRunning())
+   - if (hasCurrentSprinklerDone())
+   --- stopCurrentSprinkler();
+   --- if (isWateringLoopDone())
+   ------ stopEverything();
+   --- else
+   ------ startNextSprinkler();
+
+   Condizioni di avvio ciclo irrigazione
+   =====================================
+   Tutte le condizioni devono essere verificate:
+   - Irrigazione non avviata (ciclo o forzatura manuale)
+   - Sensore pioggia non scattato
+   - Tempo corrente > tempo avvio programmato (distinguere i giorni)
+   - Irrigazione automatica abilitata
+   - Bottone manuale non premuto (*)
+
+   Funzionamento ciclo irrigazione
+   ===============================
+   Ogni irrigatore deve rimanere aperto per WATERING_TIME
+
+*/
 
 #ifdef DEBUG
 #define LOG 1
 #endif
 
 // const long WATERING_TIME = 3600; // 60 * 60 = 1 hour
-const long WATERING_TIME = 1;
+const long WATERING_TIME = 5;
 const int PIN_SPRINKLERS[] = { 2, 3, 4, 5, 6, 7 }; // PD2 - PD7
 const int PIN_RAIN_VA = A0; // A0 - PC7
-const int PIN_RAIN_SW = 8; // PB0 
+const int PIN_RAIN_SW = 8; // PB0
 
 const int PIN_BUTTON_START = 9;
 const int PIN_BUTTON_STOP = 10;
@@ -66,31 +66,38 @@ const int PIN_SWITCH_ENABLE = 12;
 
 const int DEBOUNCE_DELAY = 50;
 
-const int WATERING_START_HOUR = 19;
-const int WATERING_START_MINUTE = 00;
+// without DST so take off an hour 
+const int WATERING_START_HOUR = 20; // it is 21
+const int WATERING_START_MINUTE = 54;
+
+struct Commands {
+  int start;
+  int stop;
+  int manual;
+} commands;
 
 struct Inputs {
   int startState;
-  int startLastState;  
+  int startLastState;
   long startDebounceTime;
-  
+
   int stopState;
-  int stopLastState;  
+  int stopLastState;
   long stopDebounceTime;
-  
+
   int manualState;
   int manualLastState;
   long manualDebounceTime;
 
   int enableState;
-  int enableLastState;  
+  int enableLastState;
   long enableDebounceTime;
 
   int rainValue;
   int rainState; // LOW = RAIN - HIGH = NO RAIN
   int rainLastState;
   long rainDebounceTime;
-  
+
 } inputs;
 
 time_t nextWateringTime = 0;
@@ -113,66 +120,79 @@ void setup() {
 
   pinMode(PIN_RAIN_VA, INPUT);
   pinMode(PIN_RAIN_SW, INPUT);
-  
-  pinMode(PIN_BUTTON_START, INPUT);
-  pinMode(PIN_BUTTON_STOP, INPUT);
-  pinMode(PIN_BUTTON_MANUAL, INPUT);
-  pinMode(PIN_SWITCH_ENABLE, INPUT);
-  
+
+  pinMode(PIN_BUTTON_START, INPUT_PULLUP);
+  pinMode(PIN_BUTTON_STOP, INPUT_PULLUP);
+  pinMode(PIN_BUTTON_MANUAL, INPUT_PULLUP);
+  pinMode(PIN_SWITCH_ENABLE, INPUT_PULLUP);
+
   memset(&inputs, 0, sizeof(Inputs));
   inputs.startState = HIGH;
   inputs.startLastState = HIGH;
-  
+
   inputs.stopState = HIGH;
   inputs.stopLastState = HIGH;
-  
+
   inputs.manualState = HIGH;
   inputs.manualLastState = HIGH;
-  
+
   inputs.enableState = HIGH;
   inputs.enableLastState = HIGH;
-  
+
   inputs.rainState = LOW;
   inputs.rainLastState = LOW;
+  
+  memset(&commands, 0, sizeof(Commands));
+  commands.start = false;
+  commands.stop = false;
+  commands.manual = false;
 
   delay(500);
-  digitalClockDisplay();
+  Serial.println("Time now (CET):");
+  digitalClockDisplay(now());
   setNextAutomaticWatering();
   Serial.println("Setup complete.");
 }
 
 void loop() {
   readInputs();
-
-  if (isStopPushed()) {
+  
+  if (commands.stop) {
     stopEverything();
-  } 
-  
-  if (isManualWateringRequested()) {
-    startManualWatering();  
+    commands.stop = false;
   }
-  
-  if (hasToStartWateringLoop()) {
+
+  if (commands.manual) {
+    startManualWatering();
+    commands.manual = false;
+  }
+
+  if (hasToStartWateringLoop() && !manualWateringRunning  && !wateringLoopRunning) {
     startWateringLoop();
   }
-  
+
   wateringLoop();
 }
 
 bool hasToStartWateringLoop() {
   // FIXME this is always true (d'oh)
-  bool timerDone = now() - nextWateringTime > 0;
+  bool timerDone = now() > nextWateringTime ? true : false;
   // loop start requested by button
-  if (isWateringLoopRequested()) {
+  if (commands.start) {
+    commands.start = false;
     return true;
   }
+
   // loop start requested by scheduling
-  if (timerDone && 
-    wateringLoopRunning == false &&
-    manualWateringRunning == false &&
-    isRaining() == false &&
-    isAutomaticWateringEnabled() == true) {
-      return true;
+  if (timerDone &&
+      !wateringLoopRunning &&
+      !manualWateringRunning &&
+      !isRaining() &&
+      isAutomaticWateringEnabled()) {
+#if LOG
+    Serial.println("Start watering loop");
+#endif
+    return true;
   }
   return false;
 }
@@ -196,7 +216,7 @@ void wateringLoop() {
         stopEverything();
       }
     }
-  }  
+  }
 }
 
 void startSprinkler(int sprinkler) {
@@ -210,17 +230,9 @@ void stopSprinkler(int sprinkler) {
 }
 
 void stopSprinklers() {
-  for (int i = 0; i < (int)(sizeof(PIN_SPRINKLERS)); i++) {
+  for (int i = 0; i < (int)(sizeof(PIN_SPRINKLERS)/sizeof(PIN_SPRINKLERS[0])); i++) {
     stopSprinkler(i);
   }
-}
-
-bool isManualWateringRequested() {
-  return inputs.manualState == LOW;
-}
-
-bool isWateringLoopRequested() {
-  return inputs.startState == LOW;
 }
 
 // if we are already watering in a loop, it passes to manual mode switching to the next sprinkler
@@ -235,15 +247,13 @@ void startManualWatering() {
 }
 
 int getNextSprinkler() {
-  return ((currentSprinkler + 1) % (int)(sizeof(PIN_SPRINKLERS)));
-}
-
-bool isStopPushed() {
-  return inputs.stopState == LOW;
+  int next = ((currentSprinkler + 1) % (int)(sizeof(PIN_SPRINKLERS)/sizeof(PIN_SPRINKLERS[0])));
+  return next;
 }
 
 bool isRaining() {
-  return inputs.rainState == LOW;
+  bool rain = inputs.rainState == HIGH;
+  return rain;
 }
 
 bool isAutomaticWateringEnabled() {
@@ -262,26 +272,32 @@ void stopEverything() {
 void setNextAutomaticWatering() {
   tmElements_t tm;
   if (RTC.read(tm) == 0) {
+    time_t curTime = makeTime(tm);
     tm.Hour = WATERING_START_HOUR;
     tm.Minute = WATERING_START_MINUTE;
     tm.Second = 0;
     // we should address DST but we dont right now so we just add a day ^_^
     time_t t = makeTime(tm);
+
     // if t has already passed set to the next day otherwise keep the value
-    if (t - now() > SECS_PER_DAY) {
-      nextWateringTime = t;
-    } else {
+    if (t < curTime) {
       nextWateringTime = t + SECS_PER_DAY;
+    } else {
+      nextWateringTime = t;
     }
+    #if LOG
+    Serial.println("Next watering at:");
+    digitalClockDisplay(nextWateringTime);
+    #endif
   }
 }
 
-/* 
- * INPUT READING 
- * =================
- * Read all button states using debouncing
- * 
- */
+/*
+   INPUT READING
+   =================
+   Read all button states using debouncing
+
+*/
 void readInputs() {
   readStartButton();
   readStopButton();
@@ -297,12 +313,15 @@ void readStartButton() {
   if (reading != inputs.startLastState) {
     // reset the debouncing timer
     inputs.startDebounceTime = millis();
-  } 
-  // after DEBOUNCE_DELAY input should be settled down  
+  }
+  // after DEBOUNCE_DELAY input should be settled down
   if ((millis() - inputs.startDebounceTime) > DEBOUNCE_DELAY) {
     // if the button state is low start has been requested:
     if (reading != inputs.startState) {
       inputs.startState = reading;
+      if (inputs.startState == LOW) {
+        commands.start = true;
+      }
 #if LOG
       Serial.print("Start changed to: ");
       Serial.println(inputs.startState, DEC);
@@ -319,12 +338,15 @@ void readStopButton() {
   if (reading != inputs.stopLastState) {
     // reset the debouncing timer
     inputs.stopDebounceTime = millis();
-  } 
-  // after DEBOUNCE_DELAY input should be settled down  
+  }
+  // after DEBOUNCE_DELAY input should be settled down
   if ((millis() - inputs.stopDebounceTime) > DEBOUNCE_DELAY) {
     // if the button state has changed:
     if (reading != inputs.stopState) {
       inputs.stopState = reading;
+      if (inputs.stopState == LOW) {
+        commands.stop = true;
+      }
 #if LOG
       Serial.print("Stop changed to: ");
       Serial.println(reading, DEC);
@@ -341,16 +363,19 @@ void readManualButton() {
   if (reading != inputs.manualLastState) {
     // reset the debouncing timer
     inputs.manualDebounceTime = millis();
-  } 
-  // after DEBOUNCE_DELAY input should be settled down  
+  }
+  // after DEBOUNCE_DELAY input should be settled down
   if ((millis() - inputs.manualDebounceTime) > DEBOUNCE_DELAY) {
     // if the button state has changed:
     if (reading != inputs.manualState) {
       inputs.manualState = reading;
+      if (inputs.manualState == LOW) {
+        commands.manual = true;
+      }
 #if LOG
       Serial.print("Manual changed to: ");
       Serial.println(reading, DEC);
-#endif      
+#endif
     }
   }
   // save the reading
@@ -363,16 +388,16 @@ void readEnableSwitch() {
   if (reading != inputs.enableLastState) {
     // reset the debouncing timer
     inputs.enableDebounceTime = millis();
-  } 
-  // after DEBOUNCE_DELAY input should be settled down  
+  }
+  // after DEBOUNCE_DELAY input should be settled down
   if ((millis() - inputs.enableDebounceTime) > DEBOUNCE_DELAY) {
     // if the button state has changed:
     if (reading != inputs.enableState) {
-      inputs.enableState = reading;    
+      inputs.enableState = reading;
 #if LOG
       Serial.print("Enable changed to: ");
       Serial.println(reading, DEC);
-#endif      
+#endif
     }
   }
   // save the reading
@@ -381,14 +406,14 @@ void readEnableSwitch() {
 
 void readRainSensor() {
   inputs.rainValue = analogRead(PIN_RAIN_VA);
-  
+
   int reading = digitalRead(PIN_RAIN_SW);
   // input has changed
   if (reading != inputs.rainLastState) {
     // reset the debouncing timer
     inputs.rainDebounceTime = millis();
-  } 
-  // after DEBOUNCE_DELAY input should be settled down  
+  }
+  // after DEBOUNCE_DELAY input should be settled down
   if ((millis() - inputs.rainDebounceTime) > DEBOUNCE_DELAY) {
     // if the button state has changed:
     if (reading != inputs.rainState) {
@@ -403,24 +428,24 @@ void readRainSensor() {
   inputs.rainLastState = reading;
 }
 
-void digitalClockDisplay(){
+void digitalClockDisplay(time_t t) {
   // digital clock display of the time
-  Serial.print(hour());
-  printDigits(minute());
-  printDigits(second());
+  Serial.print(hour(t));
+  printDigits(minute(t));
+  printDigits(second(t));
   Serial.print(" ");
-  Serial.print(day());
+  Serial.print(day(t));
   Serial.print(" ");
-  Serial.print(month());
+  Serial.print(month(t));
   Serial.print(" ");
-  Serial.print(year()); 
-  Serial.println(); 
+  Serial.print(year(t));
+  Serial.println();
 }
 
-void printDigits(int digits){
+void printDigits(int digits) {
   // utility function for digital clock display: prints preceding colon and leading 0
   Serial.print(":");
-  if(digits < 10)
+  if (digits < 10)
     Serial.print('0');
   Serial.print(digits);
 }
