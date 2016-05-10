@@ -163,7 +163,17 @@ void loop() {
   }
 
   if (commands.manual) {
-    startManualWatering();
+    if (wateringLoopRunning) {
+      // go to next sprinkler but keep looping
+      int nextSprinkler = getNextSprinkler();
+      if (nextSprinkler != 0) {
+        stopSprinkler(currentSprinkler);
+        startSprinkler(nextSprinkler);
+      }
+    } else {
+      // manual
+      startManualWatering();
+    }
     commands.manual = false;
   }
 
