@@ -53,8 +53,8 @@
 #define LOG 1
 #endif
 
-// const long WATERING_TIME = 3600; // 60 * 60 = 1 hour
-const long WATERING_TIME = 5;
+const long WATERING_TIME = 1800; // 30 * 60 = half an hour
+// const long WATERING_TIME = 5;
 const int PIN_SPRINKLERS[] = { 2, 3, 4, 5, 6, 7 }; // PD2 - PD7
 const int PIN_RAIN_VA = A0; // A0 - PC7
 const int PIN_RAIN_SW = 8; // PB0
@@ -66,9 +66,14 @@ const int PIN_SWITCH_ENABLE = 12;
 
 const int DEBOUNCE_DELAY = 50;
 
-// without DST so take off an hour 
-const int WATERING_START_HOUR = 20; // it is 21
-const int WATERING_START_MINUTE = 54;
+// without DST so take off an hour
+const int WATERING_START_HOUR = 0;
+const int WATERING_START_MINUTE = 0;
+const int WATERING_START_SECOND = 1;
+// midnight plus one minute
+
+const int SPRINKLER_ON_STATE = LOW;
+const int SPRINKLER_OFF_STATE = HIGH;
 
 struct Commands {
   int start;
@@ -147,6 +152,8 @@ void setup() {
   commands.stop = false;
   commands.manual = false;
 
+  stopSprinklers();
+  
   delay(500);
   Serial.println("Time now (CET):");
   digitalClockDisplay(now());
@@ -232,11 +239,11 @@ void wateringLoop() {
 void startSprinkler(int sprinkler) {
   currentSprinkler = sprinkler;
   currentSprinklerStartTime = now();
-  digitalWrite(PIN_SPRINKLERS[sprinkler], HIGH);
+  digitalWrite(PIN_SPRINKLERS[sprinkler], SPRINKLER_ON_STATE);
 }
 
 void stopSprinkler(int sprinkler) {
-  digitalWrite(PIN_SPRINKLERS[sprinkler], LOW);
+  digitalWrite(PIN_SPRINKLERS[sprinkler], SPRINKLER_OFF_STATE);
 }
 
 void stopSprinklers() {
@@ -285,7 +292,7 @@ void setNextAutomaticWatering() {
     time_t curTime = makeTime(tm);
     tm.Hour = WATERING_START_HOUR;
     tm.Minute = WATERING_START_MINUTE;
-    tm.Second = 0;
+    tm.Second = WATERING_START_SECOND;
     // we should address DST but we dont right now so we just add a day ^_^
     time_t t = makeTime(tm);
 
@@ -404,6 +411,8 @@ void readEnableSwitch() {
     // if the button state has changed:
     if (reading != inputs.enableState) {
       inputs.enableState = reading;
+      // ensure it will be another automatic watering set
+      setNextAutomaticWatering();
 #if LOG
       Serial.print("Enable changed to: ");
       Serial.println(reading, DEC);
